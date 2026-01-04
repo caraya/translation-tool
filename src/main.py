@@ -2,7 +2,6 @@ import typer
 import logging
 from pathlib import Path
 from typing import Optional
-from .transcriber import transcribe_video
 from .utils import write_srt
 
 app = typer.Typer(
@@ -64,6 +63,9 @@ def generate(
     for file_path in files:
         try:
             logger.info(f"Processing {file_path}...")
+            # Lazy import to avoid loading heavy libraries (Torch/Whisper) just for --help
+            from .transcriber import transcribe_video
+            
             subtitles = transcribe_video(
                 str(file_path),
                 output_language=output_language,

@@ -6,3 +6,4 @@ moviepy
 ffmpeg-python
 torchaudio
 soundfile
+torchcodec

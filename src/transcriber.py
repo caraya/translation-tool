@@ -2,6 +2,7 @@ import whisper
 import logging
 import torch
 from typing import List, Dict, Any
+from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +45,7 @@ def transcribe_video(
         subtitles = []
 
         logger.info(f"Transcribing {len(timestamps)} segments...")
-        for segment in timestamps:
+        for segment in tqdm(timestamps, desc="Transcribing segments", unit="seg"):
             start_sec = segment['start']
             end_sec = segment['end']
 

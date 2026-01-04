@@ -16,6 +16,7 @@ This document provides a detailed technical overview of the Translation Tool, ex
 * **Logging:** Sets up the logging configuration to provide feedback to the user during execution.
 
 **Why this design?**
+
 Using `typer` makes the CLI easy to maintain and self-documenting (it generates the `--help` menu automatically). Separating the CLI logic from the core transcription logic ensures that the core logic can be reused or tested independently of the command line interface.
 
 ### 2. `src/transcriber.py` (Core Logic)
@@ -45,6 +46,7 @@ Splitting the video into segments based on VAD before sending it to Whisper is a
 * **Timestamp Extraction:** It takes an audio path, processes it, and returns a list of start/end timestamps where speech is detected.
 
 **Why this design?**
+
 Isolating the VAD logic into its own file keeps the `transcriber.py` clean. Using `torch.hub` is a robust way to get the latest model without worrying about local package version conflicts.
 
 ### 4. `src/utils.py` (Helpers)
@@ -57,6 +59,7 @@ Isolating the VAD logic into its own file keeps the `transcriber.py` clean. Usin
 * **`write_srt`:** Takes the list of subtitle dictionaries and writes them to a text file in the standard SubRip (.srt) format.
 
 **Why this design?**
+
 File format details shouldn't clutter the main application logic. If we wanted to support VTT or other formats later, we would just add new functions here.
 
 ### 5. `run.py` (Execution Wrapper)
@@ -67,40 +70,63 @@ File format details shouldn't clutter the main application logic. If we wanted t
 
 * **Import Fix:** It imports `app` from `src.main` and runs it.
 * **Shebang:** It includes a specific shebang line pointing to the project's virtual environment. This ensures that even if you run `./run.py` from a shell where the venv isn't active, it will still use the correct Python interpreter and dependencies.
+* **Multiprocessing Support:** It calls `multiprocessing.freeze_support()` to ensure that the application behaves correctly when spawned as a background process (e.g., by PyTorch data loaders) in a frozen/packaged state.
 
 ---
 
-## Packaging Strategy (PyInstaller)
+## Improving Translation Quality
 
-We used **PyInstaller** to package this Python application into a single, standalone binary executable.
+Achieving high-quality translations with Whisper involves balancing accuracy against performance. Here are the primary strategies and their tradeoffs:
+
+### 1. Increasing Model Size
+
+The most direct way to improve quality is to use a larger model.
+
+* **Strategy:** Switch from the default `base` model to `small`, `medium`, or `large`.
+* **Tradeoff:** Larger models are significantly slower and require more memory (RAM/VRAM).
+  * `base`: Fast, decent for clear English, struggles with accents/translation.
+  * `small`: Good balance for many use cases.
+  * `medium`: High quality, much slower.
+  * `large`: Best quality, very slow, requires significant resources.
+
+### 2. Disabling VAD (Voice Activity Detection)
+
+By default, this tool uses Silero VAD to segment audio before sending it to Whisper.
+
+* **The Issue:** VAD might cut audio too aggressively during short pauses within a sentence. Since translation relies heavily on context, splitting a sentence in half can result in nonsensical translations.
+* **Strategy:** Use the `--no-use-vad` flag. This passes larger chunks of audio to Whisper, preserving context.
+* **Tradeoff:** Without VAD, Whisper is more prone to "hallucinations" (generating text during silence) and processing might be slower as it processes silent segments.
+
+### 3. Prompt Engineering (Advanced)
+
+Whisper accepts an `initial_prompt` to provide context.
+
+* **Strategy:** Providing a prompt like "This is a medical lecture about cardiology" helps the model resolve ambiguous terms.
+* **Tradeoff:** Requires knowing the content beforehand. (Note: This feature requires code modification to expose the `initial_prompt` parameter in the CLI).
+
+---
+
+### Packaging Strategy (PyInstaller)
+
+We used **PyInstaller** to package this Python application.
+
+**Update:** We switched from `--onefile` to `--onedir` mode to improve startup performance.
+
+* **--onefile (Old):** Compressed everything into a single binary. Slow startup because it had to unpack >1GB of data to a temporary folder on every run.
+* **--onedir (New):** Creates a directory containing the executable and all dependencies. Fast startup because files are already unpacked.
 
 ### How it Works
 
-1. **Analysis:** PyInstaller analyzes `run.py` and recursively finds all the `import` statements to discover every library the application needs (Typer, Torch, Whisper, NumPy, etc.).
-2. **Collection:** It collects the Python interpreter itself (from your virtual environment), all the discovered library files (`.py`, `.so`, `.dylib`), and the script's bytecode.
-3. **Bundling:**
-    * We used the `--onefile` mode. This compresses all the collected files into a single archive appended to a bootloader executable.
-4. **Execution:**
-    * When you run the final binary (`dist/translation-tool`), the bootloader runs first.
-    * It creates a temporary folder in your system's temp directory (e.g., `_MEIxxxxxx`).
-    * It unpacks all the bundled libraries and the Python interpreter into that temporary folder.
-    * It executes your script using that unpacked environment.
-
-### Why this strategy?
-
-* **Portability:** The user does not need to have Python, PyTorch, or any libraries installed. They just need the binary.
-* **Simplicity:** It turns a complex environment with dozens of dependencies into a single file that can be copied to `/usr/local/bin`.
+1. **Analysis:** PyInstaller analyzes `run.py` and recursively finds all the `import` statements.
+2. **Collection:** It collects the Python interpreter and all libraries.
+3. **Bundling:** It places them into a `dist/translation-tool/` directory.
+4. **Execution:** The binary `dist/translation-tool/translation-tool` runs immediately using the libraries in its own folder.
 
 ### The Build Command
 
-The command used was:
-
 ```bash
-pyinstaller --onefile --name translation-tool run.py
+pyinstaller --onedir --name translation-tool run.py
 ```
-
-* `--onefile`: Create a single executable file instead of a folder.
-* `--name`: Name the output binary `translation-tool`.
 
 ---
 
@@ -108,26 +134,30 @@ pyinstaller --onefile --name translation-tool run.py
 
 ### 1. Using the Source Code (For Developers)
 
-If you want to modify the code, run it using the wrapper script:
-
 ```bash
-# Make sure it's executable
 chmod +x run.py
-
-# Run it
 ./run.py path/to/video.mp4
 ```
 
 ### 2. Using the Binary (For Users)
 
-This is the standalone file located in `dist/`.
+**Build:**
 
 ```bash
-# Run directly
-./dist/translation-tool path/to/video.mp4
+pyinstaller --onedir --name translation-tool run.py
+```
 
-# Or install it to your path
-sudo mv dist/translation-tool /usr/local/bin/
+**Install:**
+
+We provided an `install.sh` script to handle the installation to `/usr/local/lib` (for the files) and `/usr/local/bin` (for the symlink).
+
+```bash
+sudo ./install.sh
+```
+
+**Run:**
+
+```bash
 translation-tool path/to/video.mp4
 ```
 

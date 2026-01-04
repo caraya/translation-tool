@@ -2,8 +2,10 @@
 import sys
 import os
 from pathlib import Path
+import multiprocessing
 
 if __name__ == "__main__":
+    multiprocessing.freeze_support()
     # 1. If running as a PyInstaller binary (frozen), just run the app
     if getattr(sys, 'frozen', False):
         from src.main import app
