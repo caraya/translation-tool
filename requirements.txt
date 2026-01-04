@@ -1,0 +1,8 @@
+openai-whisper
+typer
+flake8
+torch
+moviepy
+ffmpeg-python
+torchaudio
+soundfile
