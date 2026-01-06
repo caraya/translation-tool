@@ -88,8 +88,19 @@ The most direct way to improve quality is to use a larger model.
   * `small`: Good balance for many use cases.
   * `medium`: High quality, much slower.
   * `large`: Best quality, very slow, requires significant resources.
+* **Impact on Hallucinations:**
+  * **Small models** (`tiny`, `base`) are prone to "mishearing" noise as text (phonetic hallucinations).
+  * **Large models** (`medium`, `large`) are more robust against noise but can sometimes hallucinate repetitive phrases (e.g., "Thanks for watching") during long periods of silence if VAD is disabled.
 
-### 2. Disabling VAD (Voice Activity Detection)
+### 2. High Quality Mode (Beam Search)
+
+We have added a "High Quality Mode" (`--high-quality` / `-hq`) that changes how Whisper decodes audio.
+
+* **Strategy:** Instead of "greedy" decoding (taking the most likely next word), it uses **Beam Search** (`beam_size=5`) to explore multiple sentence possibilities and pick the best one. It also sets `temperature=0` for stricter adherence to the audio.
+* **Tradeoff:** This makes transcription **significantly slower** (2-5x), regardless of model size.
+* **Use Case:** Use this when the model size is already maxed out (or limited by hardware) but you still see grammatical errors or nonsensical sentences.
+
+### 3. Disabling VAD (Voice Activity Detection)
 
 By default, this tool uses Silero VAD to segment audio before sending it to Whisper.
 

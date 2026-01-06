@@ -6,10 +6,19 @@ import multiprocessing
 
 if __name__ == "__main__":
     multiprocessing.freeze_support()
-    # 1. If running as a PyInstaller binary (frozen), just run the app
+    
+    # Determine mode: CLI or GUI
+    # If arguments are provided (other than script name), use CLI. Otherwise GUI.
+    use_gui = len(sys.argv) == 1
+
+    # 1. If running as a PyInstaller binary (frozen)
     if getattr(sys, 'frozen', False):
-        from src.main import app
-        app()
+        if use_gui:
+            from src.gui import main
+            main()
+        else:
+            from src.main import app
+            app()
         sys.exit(0)
 
     # 2. If running as a script, try to auto-detect .venv relative to this script
@@ -32,8 +41,12 @@ if __name__ == "__main__":
 
     # 3. Import and run the app (now running inside venv if available)
     try:
-        from src.main import app
-        app()
+        if use_gui:
+            from src.gui import main
+            main()
+        else:
+            from src.main import app
+            app()
     except ImportError as e:
         print("\n❌ Error: Application dependencies are missing.")
         

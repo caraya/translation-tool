@@ -35,6 +35,11 @@ def generate(
         True,
         help="Use Silero VAD for speech detection."
     ),
+    high_quality: bool = typer.Option(
+        False,
+        "--high-quality", "-hq",
+        help="Enable beam search and strict decoding for better quality (slower)."
+    ),
     output_dir: Optional[Path] = typer.Option(
         None,
         help="Directory to save SRT files. Defaults to input directory."
@@ -70,7 +75,8 @@ def generate(
                 str(file_path),
                 output_language=output_language,
                 use_vad=use_vad,
-                model_size=model_size
+                model_size=model_size,
+                high_quality=high_quality
             )
 
             # Determine output path
@@ -81,6 +87,7 @@ def generate(
                 srt_path = file_path.with_suffix(".srt")
 
             write_srt(subtitles, str(srt_path))
+            print(f"Saved subtitles to {srt_path}")  # Force print to stdout
             logger.info(f"Saved subtitles to {srt_path}")
 
         except Exception as e:

@@ -1,7 +1,7 @@
 import whisper
 import logging
 import torch
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Callable, Optional
 from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
@@ -11,7 +11,9 @@ def transcribe_video(
     video_path: str,
     output_language: str = "en",
     use_vad: bool = True,
-    model_size: str = "base"
+    model_size: str = "base",
+    high_quality: bool = False,
+    progress_callback: Optional[Callable[[int, int], None]] = None
 ) -> List[Dict[str, Any]]:
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -44,43 +46,65 @@ def transcribe_video(
 
         subtitles = []
 
-        logger.info(f"Transcribing {len(timestamps)} segments...")
-        for segment in tqdm(timestamps, desc="Transcribing segments", unit="seg"):
-            start_sec = segment['start']
-            end_sec = segment['end']
+        total_segments = len(timestamps)
+        logger.info(f"Transcribing {total_segments} segments...")
+        
+        with tqdm(timestamps, desc="Transcribing segments", unit="seg") as pbar:
+            for i, segment in enumerate(pbar):
+                if progress_callback:
+                    progress_callback(i, total_segments)
 
-            start_sample = int(start_sec * 16000)
-            end_sample = int(end_sec * 16000)
+                start_sec = segment['start']
+                end_sec = segment['end']
 
-            audio_segment = audio[start_sample:end_sample]
+                start_sample = int(start_sec * 16000)
+                end_sample = int(end_sec * 16000)
 
-            # Skip very short segments (< 0.1s)
-            if len(audio_segment) < 1600:
-                continue
+                audio_segment = audio[start_sample:end_sample]
 
-            # Transcribe segment
-            result = model.transcribe(
-                audio_segment,
-                language=whisper_lang,
-                task=task,
-                fp16=False if device == "cpu" else True
-            )
+                # Skip very short segments (< 0.1s)
+                if len(audio_segment) < 1600:
+                    continue
 
-            text = result['text'].strip()
-            if text:
-                subtitles.append({
-                    'start': start_sec,
-                    'end': end_sec,
-                    'text': text
-                })
+                # Transcribe segment
+                transcribe_options = {
+                    "language": whisper_lang,
+                    "task": task,
+                    "fp16": False if device == "cpu" else True
+                }
+                
+                if high_quality:
+                    transcribe_options.update({
+                        "beam_size": 5,
+                        "best_of": 5,
+                        "temperature": 0.0
+                    })
+
+                result = model.transcribe(audio_segment, **transcribe_options)
+
+                text = result['text'].strip()
+                if text:
+                    subtitles.append({
+                        'start': start_sec,
+                        'end': end_sec,
+                        'text': text
+                    })
 
         return subtitles
     else:
         logger.info(f"Transcribing full video with Whisper (task={task})...")
-        result = model.transcribe(
-            video_path,
-            task=task,
-            language=whisper_lang,
-            fp16=False if device == "cpu" else True
-        )
+        transcribe_options = {
+            "task": task,
+            "language": whisper_lang,
+            "fp16": False if device == "cpu" else True
+        }
+        
+        if high_quality:
+            transcribe_options.update({
+                "beam_size": 5,
+                "best_of": 5,
+                "temperature": 0.0
+            })
+
+        result = model.transcribe(video_path, **transcribe_options)
         return result['segments']
